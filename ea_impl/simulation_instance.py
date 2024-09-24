@@ -1,19 +1,17 @@
 import numpy as np
 import pygad
-
-
-class Robot:
-    def __init__(self):
-        #Two params per joint, 12 joints in total.
-        self.params = np.zeros((12,2))
-
-
-    def update_parameters(self, new_parameters):
-        self.params = new_parameters
-
-
+import matplotlib.pyplot as plt
+from robot import Robot
 
 class SimulationInstance:
+    """
+    SimulationInstance class, takes in parameters for GA to initialize,
+    it has methods for the fitness function for the GA.
+    Idea is to initialize a random set of parameteres (within a certain range), then feed these into MJX to simulate.
+    After simulation we feed the fitness (distance to current goal/objective) back into this class, and progress the GA
+    based on the fitness of each robot.
+    """
+
     def __init__(self, n_gen: int, n_parents_mating: int, sol_per_pop: int, keep_elitism: int, mutation_probability: float, parent_selection_type: str, save_best_solutions: bool):
         #gene_space = [{Amplitude}, {phi (offset)}*n_joints]
         self._gene_space = [{'low': -1.57,'high':1.57},{None},]*12 #Number of joints in a single robot.
@@ -27,15 +25,13 @@ class SimulationInstance:
                            parent_selection_type=parent_selection_type,
                            mutation_probability=mutation_probability,
                            save_best_solutions=save_best_solutions,
-                           suppress_warnings=True, 
+                           suppress_warnings=False, 
                            fitness_func=self.fitness_func,
                            on_start=self.on_start,
                            on_generation=self.on_gen)
         
 
-        self.rob_array = []
-        for i in range(sol_per_pop):
-            self.rob_array.append(Robot())
+        self.rob_array = [Robot() for i in range(sol_per_pop)]
 
         #TODO: Initialize as many robot-objects as populations in GA.
 
@@ -46,6 +42,7 @@ class SimulationInstance:
         pass
 
     def run_ga(self):
+        #Starts the GA
         self.ga.run()
 
     def fitness_func(self, ga_instance, solution, solution_idx):
@@ -53,13 +50,17 @@ class SimulationInstance:
         """
         Get fitness from simulation instance result, then return it here.
         """
-        return 0
+        #print(solution,solution_idx)
+        print(solution_idx)
+        print(ga_instance.population[0])
+        return sum(solution)
     
     def on_gen(self, ga_instance):
         #TODO
         """
         This gets called when a new population is initialized,
-        update parameters for each robot in population, then run another sim on every robot, pass the new fitness to each robot 
+        update parameters for each robot in population, then run another sim on every robot, pass the new fitness to each robot.
+        Idea is to feed the new parameters into MJX, then simulate. (Sine-wave controller).
         """
         pass
     
@@ -67,16 +68,20 @@ class SimulationInstance:
         self.ga.run()
 
 
-sim_instance = SimulationInstance(n_gen=10, n_parents_mating=25, 
-                                  sol_per_pop=50, keep_elitism=1, 
+sim_instance = SimulationInstance(n_gen=2, n_parents_mating=4, 
+                                  sol_per_pop=10, keep_elitism=1, 
                                   mutation_probability=.1, parent_selection_type='sss',
                                   save_best_solutions=True)
 
 print(sim_instance.rob_array)
 
 sim_instance.run_ga()
+
+sim_instance.ga.plot_fitness()
+print(sim_instance.ga.best_solutions)
+print(sim_instance.ga.best_solution())
+"""
 print(sim_instance.ga.population)
 print(sim_instance.ga.population[0], len(sim_instance.ga.population[0]))
+"""
 
-rob = Robot()
-print(rob.params)
