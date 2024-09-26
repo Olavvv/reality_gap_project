@@ -2,6 +2,7 @@ import numpy as np
 import pygad
 import matplotlib.pyplot as plt
 from robot import Robot
+import time
 
 class SimulationInstance:
     """
@@ -12,9 +13,16 @@ class SimulationInstance:
     based on the fitness of each robot.
     """
 
-    def __init__(self, n_gen: int, n_parents_mating: int, sol_per_pop: int, keep_elitism: int, mutation_probability: float, parent_selection_type: str, save_best_solutions: bool):
+    def __init__(self, n_gen: int, n_parents_mating: int, sol_per_pop: int, keep_elitism: int, mutation_probability: float,
+                 mutation_type: str, 
+                 parent_selection_type: str, save_best_solutions: bool):
+        
+        self.SEED = 8523945
+        
+        self._on_gen = 0
+
         #gene_space = [{Amplitude}, {phi (offset)}*n_joints]
-        self._gene_space = [{'low': -1.57,'high':1.57},{None},]*12 #Number of joints in a single robot.
+        self._gene_space = [{'low': -1.57,'high':1.57},{'low':-np.pi, 'high':np.pi},]*12 #Number of joints in a single robot.
         self._num_genes = len(self._gene_space)
 
         self.ga = pygad.GA(sol_per_pop=sol_per_pop, 
@@ -22,10 +30,13 @@ class SimulationInstance:
                            num_parents_mating=n_parents_mating,
                            num_genes=self._num_genes,
                            keep_elitism=keep_elitism,
-                           parent_selection_type=parent_selection_type,
                            mutation_probability=mutation_probability,
                            save_best_solutions=save_best_solutions,
-                           suppress_warnings=False, 
+                           suppress_warnings=False,
+                           parent_selection_type=parent_selection_type,
+                           mutation_type=mutation_type,
+                           random_seed=self.SEED,
+                           parallel_processing=2, 
                            fitness_func=self.fitness_func,
                            on_start=self.on_start,
                            on_generation=self.on_gen)
@@ -51,8 +62,8 @@ class SimulationInstance:
         Get fitness from simulation instance result, then return it here.
         """
         #print(solution,solution_idx)
-        print(solution_idx)
-        print(ga_instance.population[0])
+        #print(solution_idx)
+        #print(ga_instance.population[0])
         return sum(solution)
     
     def on_gen(self, ga_instance):
@@ -62,25 +73,33 @@ class SimulationInstance:
         update parameters for each robot in population, then run another sim on every robot, pass the new fitness to each robot.
         Idea is to feed the new parameters into MJX, then simulate. (Sine-wave controller).
         """
-        pass
+        try: 
+            # Get the best solution from the current generation
+            best_solution, best_solution_fitness, best_solution_idx = ga_instance.best_solution()
+
+            # Print the generation number, best fitness score, and best solution
+            print(f"Generation: {ga_instance.generations_completed}, Best fitness: {best_solution_fitness}, Best solution: {best_solution}")
+
+        except Exception as e:
+            print(f"Error in on_generation function: {e}")
+            raise e
     
     def start_ga(self):
         self.ga.run()
 
-
-sim_instance = SimulationInstance(n_gen=2, n_parents_mating=4, 
+start = time.time()
+sim_instance = SimulationInstance(n_gen=500, n_parents_mating=4, 
                                   sol_per_pop=10, keep_elitism=1, 
-                                  mutation_probability=.1, parent_selection_type='sss',
-                                  save_best_solutions=True)
-
-print(sim_instance.rob_array)
+                                  mutation_probability=[.25,.1], parent_selection_type='sss',
+                                  save_best_solutions=True, mutation_type="adaptive")
 
 sim_instance.run_ga()
 
-sim_instance.ga.plot_fitness()
-print(sim_instance.ga.best_solutions)
-print(sim_instance.ga.best_solution())
+print(f"Time taken is: {time.time() - start}")
+
+
 """
+print(sum(sim_instance.ga.best_solutions[-1]))
 print(sim_instance.ga.population)
 print(sim_instance.ga.population[0], len(sim_instance.ga.population[0]))
 """
