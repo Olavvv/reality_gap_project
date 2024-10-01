@@ -43,7 +43,7 @@ from math import pi
 Kp = 3.0
 Kd = 1.0
 
-batch_size = 512
+batch_size = 8
 
 def pd_control(m, d):
     for i in range(m.nu):
@@ -59,7 +59,7 @@ def pd_control(m, d):
         d.ctrl[i] = Kp * pos_err + Kd * vel_err
 
 #Options
-RENDER_VIDEO = False
+RENDER_VIDEO = True
 
 mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
 mj_data = mujoco.MjData(mj_model)
@@ -75,17 +75,26 @@ for j in range(batch_size):
         dc = (mj_model.actuator_ctrlrange[i][1] - a) * rand()
         if rand() > 0.5:
             dc = -dc
-        controllers[j].append([a, (rand()*20.0-10.0), rand()*2.0*pi, dc])
+        controllers[j].append([a, (rand()*20.0), rand(), dc])
         #controllers.append([rand() * mj_model.actuator_ctrlrange[i][1], rand() * 20.0 - 10.0, rand() * 2.0 * pi, rand() * 10.0 - 5.0]) #Sine controller from main.py
 controllers = jax.numpy.array(controllers)
 
-def sine_control(m, d, cont):
+def sine_control(d, cont):
     dn = d
-    ctrl = ((cont[:, 2] * d.time) + cont[:,1])
+    ctrl = ((cont[:, 2] * d.time) + cont[:,1]) * 2 * pi
     ctrl = jax.numpy.sin(ctrl)
     ctrl = (ctrl * cont[:,0]) + cont[:,3]
     dn = dn.replace(ctrl=ctrl)
     return dn
+
+def tan_control(d, cont):
+    dn = d
+    ctrl = ((cont[:,2]*d.time)+cont[:,1]) * 2*pi
+    ctrl = 4 * jax.numpy.sin(ctrl)
+    ctrl = jax.numpy.tanh((ctrl*cont[:,0]) + cont[:,3])
+    dn = dn.replace(ctrl=ctrl)
+    return dn
+
 #    for i in range(m.nu):
 #        c = controllers[i]
 #        d.ctrl = d.ctrl.at[i].set(c[0]*sin((c[1]*pi*time)+c[2])+c[3])
@@ -110,16 +119,16 @@ scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
 duration = 10  # (seconds)
 framerate = 60.0  # (Hz)
 
-frames = []
 mujoco.mj_resetData(mj_model, mj_data)
 
 view = None
 if not RENDER_VIDEO:
     view = viewer.launch_passive(mj_model, mj_data)
 
-mujoco.set_mjcb_control(sine_control)
+#mujoco.set_mjcb_control(sine_control)
 #jit_sine = jax.jit(sine_control)
-jit_sine = jax.jit(jax.vmap(sine_control,[None,0,0]))
+jit_sine = jax.jit(jax.vmap(sine_control,[0,0]))
+jit_tan = jax.jit(jax.vmap(tan_control, [0,0]))
 
 #jit_step = jax.jit(mjx.step)
 jit_step = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
@@ -127,31 +136,43 @@ jit_step = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
 #print(mjx_model.nu, mjx_model.nv, mjx_model.na, mjx_model.actuator_ctrlrange)
 
 timecalc = time.time()
-while mjx_data.time[0] < duration:
-    simstart = mjx_data.time[0]
-    while (mjx_data.time[0] - simstart) < (1.0/framerate):
-        #print(mjx_data.time)
-        mjx_data = jit_sine(mjx_model, mjx_data, controllers)
-        mjx_data = jit_step(mjx_model, mjx_data)
-        #print(mjx_data.ctrl)
-    print("Progress", (mjx_data.time[0] / duration) * 100, "%")
-    if RENDER_VIDEO:
-        pass
-        #mj_data = mjx.get_data(mj_model,mjx_data)
-        #renderer.update_scene(mj_data, scene_option=scene_option)
-        #pixels = renderer.render()
-        #frames.append(pixels)
-    #else:
-    #    view.sync()
+def run_sim(m, d, duration_i, renderer=None, view=None ,fps=60):
+    frames = []
+    x_model = mjx.put_model(m)
+    while d.time[0] < duration_i:
+        simstart = d.time[0]
+        while (d.time[0] - simstart) < (1.0/fps):
+            #print(mjx_data.time)
+            d = jit_sine(d, controllers)
+            d = jit_step(x_model, d)
+            #print(mjx_data.ctrl)
+        print("Progress", (d.time[0] / duration_i) * 100, "%")
+        if renderer:
+            batch_mj_data = mjx.get_data(m, d)
+            renderer.update_scene(batch_mj_data[0], scene_option=scene_option)
+            pixels = renderer.render()
+            frames.append(pixels)
+        elif view:
+            view.sync()
+    return m, d, frames
+
+mjx_data, frames = run_sim(mj_model, mjx_data, duration, renderer)[1:3]
+
 print("Simulation of", batch_size, "robots took", (time.time()-timecalc)/60, "minutes")
 distances = []
 maxdist = 0.0
-for el in mjx_data.xpos:
+best_individual = None
+for i in range(mjx_data.xpos.__len__()):
+    el = mjx_data.xpos[i];
     dist = sqrt(el[1][0]**2 + el[1][1]**2 + el[1][2])
     distances.append(dist)
     if dist > maxdist:
+        best_individual = controllers[i]
         maxdist = dist
 print("Longest traversal was", maxdist)
+np.set_printoptions(suppress=True)
+print("Best traversal by controller:", best_individual)
+
 
 # Simulate and display video.
 if RENDER_VIDEO:
