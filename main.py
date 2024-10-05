@@ -104,7 +104,7 @@ def batch_info(d):
 def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do_render=True):
     scene_option = mujoco.MjvOption()
     scene_option.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
-    rend = mujoco.Renderer(mj_model, width=800, height=600)
+    rend = mujoco.Renderer(m, width=800, height=600)
     frames = []
 
     while d.time < duration:
