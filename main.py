@@ -124,25 +124,33 @@ def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do
 
 
 #########################################################################
-batch_size = 2
-duration = 10
-mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
-mj_data = mujoco.MjData(mj_model)
 
-mjx_model = mjx.put_model(mj_model)
-mjx_data = mjx.put_data(mj_model, mj_data)
 
-rng = jax.random.PRNGKey(0)
-rng = jax.random.split(rng, batch_size)
-batchify = jax.vmap(lambda rng: mjx_data)
-mjx_data = batchify(rng)
+def main():
+    batch_size = 2
+    duration = 10
+    mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
+    mj_data = mujoco.MjData(mj_model)
 
-controllers = generate_controllers(batch_size, mj_model)
+    mjx_model = mjx.put_model(mj_model)
+    mjx_data = mjx.put_data(mj_model, mj_data)
 
-mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
+    rng = jax.random.PRNGKey(0)
+    rng = jax.random.split(rng, batch_size)
+    batchify = jax.vmap(lambda rng: mjx_data)
+    mjx_data = batchify(rng)
 
-distances, best = batch_info(mjx_data)
+    controllers = generate_controllers(batch_size, mj_model)
 
-frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
-media.write_video("output.mp4", frames)
+    mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
 
+    distances, best = batch_info(mjx_data)
+
+    frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
+    media.write_video("output.mp4", frames)
+
+print(jax.devices())
+if input("Continue with run? (y/n)") == "y":
+    main()
+else:
+    print("Exiting")
