@@ -33,8 +33,8 @@ from mujoco import mjx
 #from brax.training.agents.ppo import networks as ppo_networks
 #from brax.io import html, mjcf, model
 
-import glfw
-glfw.init()
+#import glfw
+
 
 from random import random as rand
 from math import sin
@@ -127,8 +127,8 @@ def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do
 #########################################################################
 
 
-def main():
-    batch_size = 2
+def main(batch_size):
+    #batch_size = 2
     duration = 10
     mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
     mj_data = mujoco.MjData(mj_model)
@@ -152,6 +152,9 @@ def main():
 
 print(jax.devices())
 if input("Continue with run? (y/n)") == "y":
-    main()
+    try:
+        main(int(input("Batch size: ")))
+    except ValueError:
+        print("Invalid value")
 else:
     print("Exiting")
