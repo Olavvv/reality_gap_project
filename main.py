@@ -33,7 +33,8 @@ from mujoco import mjx
 #from brax.training.agents.ppo import networks as ppo_networks
 #from brax.io import html, mjcf, model
 
-#import glfw
+import glfw
+glfw.init()
 
 from random import random as rand
 from math import sin
