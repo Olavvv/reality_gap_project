@@ -35,12 +35,17 @@ from mujoco import mjx
 
 #import glfw
 
+import matplotlib.pyplot as plt
+import time
+from simulation_instance import SimulationInstance
+
 
 from random import random as rand
 from math import sin
 from math import sqrt
 from math import pi
 from math import tanh
+
 
 def generate_controllers(num, model):
     controllers = []
@@ -91,7 +96,7 @@ def batch_info(d):
     maxdist = 0.0
     best_individual = None
     for i in range(d.xpos.__len__()):
-        el = d.xpos[i];
+        el = d.xpos[i]
         dist = sqrt(el[1][0] ** 2 + el[1][1] ** 2 + el[1][2])
         distances.append(dist)
         if dist > maxdist:
@@ -127,7 +132,7 @@ def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do
 #########################################################################
 
 
-def main(batch_size):
+def main(batch_size, n_gen):
     #batch_size = 2
     duration = 10
     mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
@@ -141,20 +146,50 @@ def main(batch_size):
     batchify = jax.vmap(lambda rng: mjx_data)
     mjx_data = batchify(rng)
 
-    controllers = generate_controllers(batch_size, mj_model)
+    #controllers = generate_controllers(batch_size, mj_model)
 
-    mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
+    #n_parents_mating has to be an even number, if not it wont work :)
+    sim_instance = SimulationInstance(n_gen=1, n_parents_mating=2, 
+                                  sol_per_pop=batch_size, keep_elitism=0, 
+                                  mutation_probability=[.25,.1], parent_selection_type='sss',
+                                  save_best_solutions=False, mutation_type="adaptive")
+    
+    current_gen = 0
+    for i in range(n_gen):
 
-    distances, best = batch_info(mjx_data)
+        controllers = sim_instance.ga.population.reshape(batch_size,12,4)
+
+        mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
+
+        distances, best = batch_info(mjx_data)
+  
+        #mujoco.mj_resetData(mjx_model, mjx_data) # Prøvde å resette dataen mellom hver gen for å se om det fiksa noe, men gjorde ikke det.
+
+        sim_instance.fitness = distances
+        sim_instance.ga.run()
+
+
+        best_solution, best_solution_fitness, _ = sim_instance.ga.best_solution()
+        print(best_solution_fitness)
+
+
+        current_gen += 1
 
     frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
     media.write_video("output.mp4", frames)
 
+
+    best_solution, best_solution_fitness, _ = sim_instance.ga.best_solution()
+    print(best_solution, best_solution_fitness)
+
 print(jax.devices())
+batch_size = 0
+n_gen = 0
 if input("Continue with run? (y/n)") == "y":
-    try:
-        main(int(input("Batch size: ")))
-    except ValueError:
-        print("Invalid value")
+
+    batch_size = int(input("Batch size: "))
+    n_gen = int(input("Number of generations to run: "))
+    main(batch_size, n_gen)
+
 else:
     print("Exiting")
