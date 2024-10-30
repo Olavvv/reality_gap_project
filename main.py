@@ -37,14 +37,38 @@ from mujoco import mjx
 
 import matplotlib.pyplot as plt
 import time
-from simulation_instance import SimulationInstance
+#from simulation_instance import SimulationInstance
+import pygad
 
 
 from random import random as rand
+import math
 from math import sin
 from math import sqrt
 from math import pi
 from math import tanh
+
+class Fitness():
+    def __init__(self):
+        self.fitness = []
+        self.best = 0
+
+    def update_fitness(self, new_fitness, new_best):
+        self.fitness = new_fitness
+        self.best = new_best
+
+fitness_class = Fitness()
+
+print(jax.devices())
+batch_size = 0
+n_gen = 0
+if input("Continue with run? (y/n)") == "y":
+
+    batch_size = int(input("Batch size: "))
+    n_gen = int(input("Number of generations to run: "))
+
+else:
+    print("Exiting")
 
 
 def generate_controllers(num, model):
@@ -129,11 +153,50 @@ def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do
 
 
 
-#########################################################################
+def initialize_ga(batch_size, n_gen):
+    SEED = 8523945
 
+    shoulder_range = [-1.56, 1.56] # .1 less just because.
+    elbow_wrist_range = [-.7754, .7754]
 
-def main(batch_size, n_gen):
-    #batch_size = 2
+    _gene_space = []
+    for i in range(4):
+        _gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        
+    _num_genes = len(_gene_space)
+
+    ga = pygad.GA(sol_per_pop=batch_size, 
+                num_generations=n_gen, 
+                num_parents_mating=int(math.ceil(batch_size/3)),
+                num_genes=_num_genes,
+                keep_elitism=1,
+                mutation_probability=.20,
+                save_best_solutions=True,
+                suppress_warnings=False,
+                parent_selection_type="tournament",
+                crossover_type="two_points",
+                mutation_type="scramble",
+                random_seed=SEED,
+                gene_space=_gene_space,
+                fitness_func=fitness_func,
+                on_generation=run_mjx_batch_sim,
+                on_start=run_mjx_batch_sim,
+                parallel_processing=None)
+    
+    return ga
+
+def run_mjx_batch_sim(ga_instance):
     duration = 10
     mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
     mj_data = mujoco.MjData(mj_model)
@@ -146,50 +209,40 @@ def main(batch_size, n_gen):
     batchify = jax.vmap(lambda rng: mjx_data)
     mjx_data = batchify(rng)
 
-    #controllers = generate_controllers(batch_size, mj_model)
+    mujoco.mj_resetData(mj_model, mj_data)
+    mjx_model = mjx.put_model(mj_model)
+    mjx_data = mjx.put_data(mj_model, mj_data)
+    mjx_data = batchify(rng)
 
-    #n_parents_mating has to be an even number, if not it wont work :)
-    sim_instance = SimulationInstance(n_gen=1, n_parents_mating=2, 
-                                  sol_per_pop=batch_size, keep_elitism=0, 
-                                  mutation_probability=[.25,.1], parent_selection_type='sss',
-                                  save_best_solutions=False, mutation_type="adaptive")
-    
-    current_gen = 0
-    for i in range(n_gen):
+    controllers = ga_instance.population.reshape(batch_size,12,4)
 
-        controllers = sim_instance.ga.population.reshape(batch_size,12,4)
+    mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
 
-        mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
+    distances, best = batch_info(mjx_data)
 
-        distances, best = batch_info(mjx_data)
+    fitness_class.update_fitness(distances,best)
   
-        #mujoco.mj_resetData(mjx_model, mjx_data) # Prøvde å resette dataen mellom hver gen for å se om det fiksa noe, men gjorde ikke det.
+    print(distances)
 
-        sim_instance.fitness = distances
-        sim_instance.ga.run()
+    if (ga_instance.generations_completed == n_gen-1):
+        print(f"Saving video of best individual on last generation: {ga_instance.generations_completed + 1}")
+        frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
+        media.write_video("output.mp4", frames)
 
-
-        best_solution, best_solution_fitness, _ = sim_instance.ga.best_solution()
-        print(best_solution_fitness)
-
-
-        current_gen += 1
-
-    frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
-    media.write_video("output.mp4", frames)
+def fitness_func(ga_instance, solution, solution_idx):
+    distances = fitness_class.fitness
+    return distances[solution_idx]
 
 
-    best_solution, best_solution_fitness, _ = sim_instance.ga.best_solution()
-    print(best_solution, best_solution_fitness)
 
-print(jax.devices())
-batch_size = 0
-n_gen = 0
-if input("Continue with run? (y/n)") == "y":
+#########################################################################
 
-    batch_size = int(input("Batch size: "))
-    n_gen = int(input("Number of generations to run: "))
-    main(batch_size, n_gen)
 
-else:
-    print("Exiting")
+def main(batch_size, n_gen):
+
+    ga = initialize_ga(batch_size, n_gen)
+    ga.run()
+    ga.plot_fitness()
+
+
+main(batch_size, n_gen)
