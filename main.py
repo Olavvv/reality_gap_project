@@ -180,13 +180,14 @@ def initialize_ga(batch_size, n_gen):
                 num_generations=n_gen, 
                 num_parents_mating=int(math.ceil(batch_size/3)),
                 num_genes=_num_genes,
-                keep_elitism=1,
-                mutation_probability=.20,
+                keep_elitism=int(math.ceil(batch_size/10)),
+                mutation_probability=.15,
+                mutation_num_genes=5,
                 save_best_solutions=True,
                 suppress_warnings=False,
                 parent_selection_type="tournament",
-                crossover_type="two_points",
-                mutation_type="scramble",
+                crossover_type="single_point",
+                mutation_type="random",
                 random_seed=SEED,
                 gene_space=_gene_space,
                 fitness_func=fitness_func,
@@ -224,7 +225,7 @@ def run_mjx_batch_sim(ga_instance):
   
     print(distances)
 
-    if (ga_instance.generations_completed == n_gen-1):
+    if (ga_instance.generations_completed == n_gen):
         print(f"Saving video of best individual on last generation: {ga_instance.generations_completed + 1}")
         frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
         media.write_video("output.mp4", frames)
