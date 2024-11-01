@@ -88,14 +88,14 @@ def tan_control_mjx(d, cont):
     dn = d
     ctrl = ((cont[:,2]*d.time)+cont[:,1]) * 2*pi
     ctrl = 4 * jax.numpy.sin(ctrl)
-    ctrl = jax.numpy.tanh((ctrl*cont[:,0]) + cont[:,3])
+    ctrl = cont[:,0]*jax.numpy.tanh((ctrl) + cont[:,3])
     dn = dn.replace(ctrl=ctrl)
     return dn
 
 
 def tan_control(m, d, cont):
     for i in range(m.nu):
-        d.ctrl[i] = tanh(cont[i][0]*4*sin(((cont[i][2]*d.time)+cont[i][1]) * 2 * pi)+cont[i][3])
+        d.ctrl[i] = cont[i][0]*tanh(4*sin(((cont[i][2]*d.time)+cont[i][1]) * 2 * pi)+cont[i][3])
 
 jit_tan = jax.jit(jax.vmap(tan_control_mjx,(0,0)))
 jit_step = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
@@ -210,10 +210,10 @@ def run_mjx_batch_sim(ga_instance):
     batchify = jax.vmap(lambda rng: mjx_data)
     mjx_data = batchify(rng)
 
-    mujoco.mj_resetData(mj_model, mj_data)
-    mjx_model = mjx.put_model(mj_model)
-    mjx_data = mjx.put_data(mj_model, mj_data)
-    mjx_data = batchify(rng)
+    #mujoco.mj_resetData(mj_model, mj_data)
+    #mjx_model = mjx.put_model(mj_model)
+    #mjx_data = mjx.put_data(mj_model, mj_data)
+    #mjx_data = batchify(rng)
 
     controllers = ga_instance.population.reshape(batch_size,12,4)
 
