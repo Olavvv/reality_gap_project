@@ -35,12 +35,41 @@ from mujoco import mjx
 
 #import glfw
 
+import matplotlib.pyplot as plt
+import time
+#from simulation_instance import SimulationInstance
+import pygad
+
 
 from random import random as rand
+import math
 from math import sin
 from math import sqrt
 from math import pi
 from math import tanh
+
+class Fitness():
+    def __init__(self):
+        self.fitness = []
+        self.best = 0
+
+    def update_fitness(self, new_fitness, new_best):
+        self.fitness = new_fitness
+        self.best = new_best
+
+fitness_class = Fitness()
+
+print(jax.devices())
+batch_size = 0
+n_gen = 0
+if input("Continue with run? (y/n)") == "y":
+
+    batch_size = int(input("Batch size: "))
+    n_gen = int(input("Number of generations to run: "))
+
+else:
+    print("Exiting")
+
 
 def generate_controllers(num, model):
     controllers = []
@@ -59,14 +88,14 @@ def tan_control_mjx(d, cont):
     dn = d
     ctrl = ((cont[:,2]*d.time)+cont[:,1]) * 2*pi
     ctrl = 4 * jax.numpy.sin(ctrl)
-    ctrl = jax.numpy.tanh((ctrl*cont[:,0]) + cont[:,3])
+    ctrl = cont[:,0]*jax.numpy.tanh((ctrl) + cont[:,3])
     dn = dn.replace(ctrl=ctrl)
     return dn
 
 
 def tan_control(m, d, cont):
     for i in range(m.nu):
-        d.ctrl[i] = tanh(cont[i][0]*4*sin(((cont[i][2]*d.time)+cont[i][1]) * 2 * pi)+cont[i][3])
+        d.ctrl[i] = cont[i][0]*tanh(4*sin(((cont[i][2]*d.time)+cont[i][1]) * 2 * pi)+cont[i][3])
 
 jit_tan = jax.jit(jax.vmap(tan_control_mjx,(0,0)))
 jit_step = jax.jit(jax.vmap(mjx.step, in_axes=(None, 0)))
@@ -91,7 +120,7 @@ def batch_info(d):
     maxdist = 0.0
     best_individual = None
     for i in range(d.xpos.__len__()):
-        el = d.xpos[i];
+        el = d.xpos[i]
         dist = sqrt(el[1][0] ** 2 + el[1][1] ** 2 + el[1][2])
         distances.append(dist)
         if dist > maxdist:
@@ -124,11 +153,52 @@ def run_sim(m, d, duration, controller, fps=60, view=None, scene_option=None, do
 
 
 
-#########################################################################
+def initialize_ga(batch_size, n_gen):
+    SEED = 8523945
 
+    shoulder_range = [-1.56, 1.56] # .1 less just because.
+    elbow_wrist_range = [-.7754, .7754]
 
-def main(batch_size):
-    #batch_size = 2
+    _gene_space = []
+    for i in range(4):
+        _gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        _gene_space.append({'low': 0.0, 'high': 20.0})
+        _gene_space.append({'low': 0.0, 'high': 1.0})
+        _gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        
+    _num_genes = len(_gene_space)
+
+    ga = pygad.GA(sol_per_pop=batch_size, 
+                num_generations=n_gen, 
+                num_parents_mating=int(math.ceil(batch_size/2)),
+                num_genes=_num_genes,
+                keep_elitism=5,
+                save_best_solutions=True,
+                suppress_warnings=True,
+                parent_selection_type="sss",
+                crossover_type="uniform",
+                mutation_type="random",
+                mutation_probability=.1,
+                random_mutation_min_val=-2.0,
+                random_mutation_max_val=2.0,
+                random_seed=SEED,
+                gene_space=_gene_space,
+                fitness_func=fitness_func,
+                on_generation=run_mjx_batch_sim,
+                on_start=run_mjx_batch_sim,
+                parallel_processing=None)
+    
+    return ga
+
+def run_mjx_batch_sim(ga_instance):
     duration = 10
     mj_model = mujoco.MjModel.from_xml_path("./qutee.xml")
     mj_data = mujoco.MjData(mj_model)
@@ -141,20 +211,40 @@ def main(batch_size):
     batchify = jax.vmap(lambda rng: mjx_data)
     mjx_data = batchify(rng)
 
-    controllers = generate_controllers(batch_size, mj_model)
+    #mujoco.mj_resetData(mj_model, mj_data)
+    #mjx_model = mjx.put_model(mj_model)
+    #mjx_data = mjx.put_data(mj_model, mj_data)
+    #mjx_data = batchify(rng)
+
+    controllers = ga_instance.population.reshape(batch_size,12,4)
 
     mjx_model, mjx_data = run_sim_batch(mjx_model, mjx_data, duration, controllers)
 
     distances, best = batch_info(mjx_data)
 
-    frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
-    media.write_video("output.mp4", frames)
+    fitness_class.update_fitness(distances,best)
+  
+    print(distances)
 
-print(jax.devices())
-if input("Continue with run? (y/n)") == "y":
-    try:
-        main(int(input("Batch size: ")))
-    except ValueError:
-        print("Invalid value")
-else:
-    print("Exiting")
+    if (ga_instance.generations_completed == n_gen):
+        print(f"Saving video of best individual on last generation: {ga_instance.generations_completed + 1}")
+        frames = run_sim(mj_model, mj_data, duration, controllers[best], do_render=True)[2]
+        media.write_video("output.mp4", frames)
+
+def fitness_func(ga_instance, solution, solution_idx):
+    distances = fitness_class.fitness
+    return distances[solution_idx]
+
+
+
+#########################################################################
+
+
+def main(batch_size, n_gen):
+
+    ga = initialize_ga(batch_size, n_gen)
+    ga.run()
+    ga.plot_fitness()
+
+
+main(batch_size, n_gen)

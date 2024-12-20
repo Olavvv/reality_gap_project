@@ -1,8 +1,9 @@
 import numpy as np
 import pygad
 import matplotlib.pyplot as plt
-from robot import Robot
 import time
+import mujoco
+from random import random as rand
 
 class SimulationInstance:
     """
@@ -20,12 +21,39 @@ class SimulationInstance:
         self.SEED = 8523945
         
         self._on_gen = 0
+        self._sol_per_pop = sol_per_pop
+        self.fitness = []
 
-        #gene_space = [{Amplitude}, {phi (offset)}*n_joints]
-        self._gene_space = [{'low': -1.57,'high':1.57},{'low':-np.pi, 'high':np.pi},]*12 #Number of joints in a single robot.
+        shoulder_range = [-1.56, 1.56] # .1 less just because.
+        elbow_wrist_range = [-.7754, .7754]
+
+        self._gene_space = []
+        for i in range(4):
+            self._gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+            self._gene_space.append({'low': 0.0, 'high': 20.0})
+            self._gene_space.append({'low': 0.0, 'high': 1.0})
+            self._gene_space.append({'low': shoulder_range[0], 'high': shoulder_range[1]})
+            self._gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+            self._gene_space.append({'low': 0.0, 'high': 20.0})
+            self._gene_space.append({'low': 0.0, 'high': 1.0})
+            self._gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+            self._gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+            self._gene_space.append({'low': 0.0, 'high': 20.0})
+            self._gene_space.append({'low': 0.0, 'high': 1.0})
+            self._gene_space.append({'low': elbow_wrist_range[0], 'high': elbow_wrist_range[1]})
+        
         self._num_genes = len(self._gene_space)
 
-        self.ga = pygad.GA(sol_per_pop=sol_per_pop, 
+        """
+        for i in range(self.model.nu):
+            a = rand() * self.model.actuator_ctrlrange[i][1]
+            dc = (self.model.actuator_ctrlrange[i][1] - a) * rand()
+            if rand() > 0.5:
+                dc = -dc
+            self._gene_space.append({a, (rand() * 20.0), rand(), dc})
+        """
+
+        self.ga = pygad.GA(sol_per_pop=self._sol_per_pop, 
                            num_generations=n_gen, 
                            num_parents_mating=n_parents_mating,
                            num_genes=self._num_genes,
@@ -36,20 +64,15 @@ class SimulationInstance:
                            parent_selection_type=parent_selection_type,
                            mutation_type=mutation_type,
                            random_seed=self.SEED,
-                           parallel_processing=2, 
-                           fitness_func=self.fitness_func,
-                           on_start=self.on_start,
-                           on_generation=self.on_gen)
+                           gene_space=self._gene_space,
+                           fitness_func=self.fitness_func)
         
-
-        self.rob_array = [Robot() for i in range(sol_per_pop)]
 
         #TODO: Initialize as many robot-objects as populations in GA.
 
+
     def on_start(self, ga_instance):
         #TODO: Assign starting parameters to each robot object.
-        for rob in self.rob_array:
-            pass
         pass
 
     def run_ga(self):
@@ -61,10 +84,7 @@ class SimulationInstance:
         """
         Get fitness from simulation instance result, then return it here.
         """
-        #print(solution,solution_idx)
-        #print(solution_idx)
-        #print(ga_instance.population[0])
-        return sum(solution)
+        return self.fitness[solution_idx]
     
     def on_gen(self, ga_instance):
         #TODO
@@ -88,12 +108,13 @@ class SimulationInstance:
         self.ga.run()
 
 start = time.time()
-sim_instance = SimulationInstance(n_gen=500, n_parents_mating=4, 
-                                  sol_per_pop=10, keep_elitism=1, 
+sim_instance = SimulationInstance(n_gen=500, n_parents_mating=1, 
+                                  sol_per_pop=1, keep_elitism=1, 
                                   mutation_probability=[.25,.1], parent_selection_type='sss',
                                   save_best_solutions=True, mutation_type="adaptive")
 
-sim_instance.run_ga()
+print(len(sim_instance.ga.population[0]))
+#sim_instance.run_ga()
 
 print(f"Time taken is: {time.time() - start}")
 
